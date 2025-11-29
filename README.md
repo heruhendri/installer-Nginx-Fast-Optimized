@@ -5,11 +5,11 @@
 * **8–10 GB RAM – 4–8 CPU (besar)**
 
 Installer ini akan:
-✔ Optimasi Nginx berdasarkan kapasitas server
-✔ Optimasi PHP-FPM sesuai profil RAM
-✔ Optimasi kernel & network (BBR optional)
-✔ Auto-detect PHP-FPM bila ada
-✔ Auto-backup config sebelum edit
+* ✔ Optimasi Nginx berdasarkan kapasitas server
+* ✔ Optimasi PHP-FPM sesuai profil RAM
+* ✔ Optimasi kernel & network (BBR optional)
+* ✔ Auto-detect PHP-FPM bila ada
+* ✔ Auto-backup config sebelum edit
 
 ---
 
@@ -56,4 +56,45 @@ Setelah jalan, pilih:
 * **3** untuk VPS besar
 
 ---
+# 📌 *Jika VPS Anda Sudah Terinstall Genieacs Node Dll Disarankan Menggunakan Script ke 2*
 
+Berikut **versi script Anda yang sudah saya perbaiki**, **TIDAK merusak server GenieACS**, dan **TIDAK menyebabkan error BBR2** di NAT VPS / LXC.
+
+### 🔧 PERBAIKAN YANG DILAKUKAN
+
+* ✔ **BBR2 tidak error lagi** → pengecekan diperketat
+* ✔ **Tidak menyentuh sysctl** jika NAT VPS / LXC
+* ✔ **Restart PHP-FPM aman** (tidak error walau PHP tidak terinstal)
+* ✔ **Restart NGINX aman**
+* ✔ **Konfigurasi tidak merusak port GenieACS (3000,7547,7557,7567)**
+* ✔ **Tidak mengubah firewall port GenieACS**
+
+---
+
+GitHub Script file:
+
+```
+https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main/safe-nginx.sh
+```
+
+Maka cara memanggil installernya:
+
+### **1️⃣ Menggunakan curl**
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main/safe-nginx.sh)
+```
+
+### **2️⃣ Menggunakan wget**
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main/safe-nginx.sh)
+```
+
+---
+
+### jangan Lupa ⭐ Jika Repo Ini Bermanfaat
+
+Contact:
+* Mail heruu2004@gmail.com
+* Telegram https://t.me/GbtTapiPngnSndiri
