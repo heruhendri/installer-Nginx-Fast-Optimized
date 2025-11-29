@@ -67,12 +67,17 @@ http {
     sendfile on;
     tcp_nopush on;
     tcp_nodelay on;
+
+    client_max_body_size 100M;
+
     keepalive_timeout 30;
+    keepalive_requests 200;
 
     gzip on;
     gzip_comp_level $GZIP_LEVEL;
-
-    client_max_body_size 100M;
+    gzip_min_length 10240;
+    gzip_proxied any;
+    gzip_vary on;
 
     include /etc/nginx/mime.types;
     include /etc/nginx/conf.d/*.conf;
@@ -81,7 +86,7 @@ http {
 EOF
 
 # ===========================================
-# TANYA USER: MAU SSL ATAU TIDAK
+# SSL OPTIONAL
 # ===========================================
 read -p "Apakah anda ingin menginstall SSL Let's Encrypt? (y/n): " SSL_USE
 
@@ -99,27 +104,60 @@ else
 fi
 
 # ===========================================
-# TANYA USER: MAU BBR ATAU TIDAK
+# FUNGSI BBR2
 # ===========================================
-read -p "Aktifkan BBR2 Accelerator? (y/n): " BBR_USE
+activate_bbr2() {
+    echo -n "[?] Mengaktifkan BBR2 Accelerator? (y/n): "
+    read ans
+    if [[ $ans != "y" ]]; then
+        echo "[!] BBR2 dibatalkan."
+        return
+    fi
 
-if [[ "$BBR_USE" =~ ^[Yy]$ ]]; then
-    echo "[+] Mengaktifkan BBR2..."
+    echo "[+] Mengecek dukungan kernel..."
 
-    cat >> /etc/sysctl.conf << EOF
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-EOF
+    # Jika folder sysctl tidak ada → NAT VPS / LXC
+    if [[ ! -d /proc/sys/net/ipv4 ]]; then
+        echo "[!] Kernel tidak bisa diubah (LXC/NAT VPS)."
+        echo "[!] BBR/BBR2 tidak dapat diaktifkan."
+        return
+    fi
 
-    sysctl -p
+    # Ambil daftar CC
+    AVAILABLE=$(sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | awk '{print $3}')
 
-    echo "[+] BBR2 aktif!"
-else
-    echo "[+] BBR2 dilewati..."
-fi
+    # Jika BBR2 tersedia
+    if echo "$AVAILABLE" | grep -q "bbr2"; then
+        echo "[+] Mengaktifkan BBR2..."
+        sysctl -w net.core.default_qdisc=fq
+        sysctl -w net.ipv4.tcp_congestion_control=bbr2
+        echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+        echo "net.ipv4.tcp_congestion_control=bbr2" >> /etc/sysctl.conf
+        sysctl -p
+        echo "[✓] BBR2 berhasil diaktifkan."
+        return
+    fi
+
+    # Jika hanya BBR tersedia
+    if echo "$AVAILABLE" | grep -q "bbr"; then
+        echo "[+] Kernel mendukung BBR. Mengaktifkan BBR..."
+        sysctl -w net.core.default_qdisc=fq
+        sysctl -w net.ipv4.tcp_congestion_control=bbr
+        echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+        echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+        sysctl -p
+        echo "[✓] BBR berhasil diaktifkan."
+        return
+    fi
+
+    echo "[!] Kernel tidak mendukung BBR/BBR2."
+}
+
+# ====== PANGGIL FUNGSI BBR ======
+activate_bbr2
 
 # ===========================================
-# TANYA USER: MAU FIREWALL ANTI-DDOS ATAU TIDAK
+# FIREWALL OPTIONAL
 # ===========================================
 read -p "Aktifkan firewall anti-DDoS (ufw rate limit)? (y/n): " FW_USE
 
@@ -127,14 +165,11 @@ if [[ "$FW_USE" =~ ^[Yy]$ ]]; then
     echo "[+] Mengaktifkan UFW Anti-DDoS..."
 
     apt install -y ufw
-
     ufw allow OpenSSH
     ufw allow 80/tcp
     ufw allow 443/tcp
-
     ufw limit 80/tcp
     ufw limit 443/tcp
-
     echo "y" | ufw enable
 
     echo "[+] Firewall aktif!"
@@ -143,23 +178,22 @@ else
 fi
 
 # ===========================================
-# PHP-FPM OPTIMISASI OTOMATIS (JIKA ADA)
+# PHP-FPM OPTIMISASI (Jika Ada)
 # ===========================================
-PHP_FPM=$(ls /etc/php/*/fpm/pool.d/www.conf 2>/dev/null || true)
-
-if [[ -n "$PHP_FPM" ]]; then
-    sed -i "s/^pm.max_children =.*/pm.max_children = $MAX_CHILD/" "$PHP_FPM"
-    sed -i "s/^pm.start_servers =.*/pm.start_servers = $PM_START/" "$PHP_FPM"
-    sed -i "s/^pm.min_spare_servers =.*/pm.min_spare_servers = $PM_MIN/" "$PHP_FPM"
-    sed -i "s/^pm.max_spare_servers =.*/pm.max_spare_servers = $PM_MAX/" "$PHP_FPM"
-
-    systemctl restart php*-fpm
-fi
+for PHPV in /etc/php/*/fpm/pool.d/www.conf; do
+    if [[ -f "$PHPV" ]]; then
+        sed -i "s/^pm.max_children =.*/pm.max_children = $MAX_CHILD/" "$PHPV"
+        sed -i "s/^pm.start_servers =.*/pm.start_servers = $PM_START/" "$PHPV"
+        sed -i "s/^pm.min_spare_servers =.*/pm.min_spare_servers = $PM_MIN/" "$PHPV"
+        sed -i "s/^pm.max_spare_servers =.*/pm.max_spare_servers = $PM_MAX/" "$PHPV"
+    fi
+done
 
 systemctl restart nginx
+systemctl restart php*-fpm 2>/dev/null || true
 
 echo ""
 echo "================================================"
 echo " INSTALASI SELESAI!"
-echo " Fitur tambahan hanya dipasang jika anda pilih"
+echo " Fitur tambahan dipasang sesuai pilihan Anda."
 echo "================================================"
