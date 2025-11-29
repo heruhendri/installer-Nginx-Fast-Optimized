@@ -1,4 +1,4 @@
-Baik Hendri, saya buatkan **installer otomatis** yang bisa memilih **profil optimasi server berdasarkan RAM & CPU**:
+# **installer otomatis** yang bisa memilih **profil optimasi server berdasarkan RAM & CPU**:
 
 * **1 GB RAM – 1 CPU (VPS kecil / NATVPS)**
 * **2–4 GB RAM – 2 CPU (menengah)**
