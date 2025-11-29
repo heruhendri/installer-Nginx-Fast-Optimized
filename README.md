@@ -12,6 +12,8 @@ Installer ini akan:
 * ✔ Auto-backup config sebelum edit
 
 ---
+## **🖼️ SCREENSHOOT**
+![https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/fedc44236c4746601653fd60f8e59d14e9ca74a3/ss.png](https://)
 
 # ✅ **INSTALLER NGINX AUTO-OPTIMIZED BERDASARKAN RAM/CPU**
 
