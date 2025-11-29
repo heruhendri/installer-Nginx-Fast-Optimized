@@ -1,10 +1,46 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "==============================================="
-echo "  SAFE NGINX INSTALLER (For GenieACS) by Hendri"
-echo "==============================================="
+echo "================================================"
+echo "  NGINX AUTO INSTALLER (MODULAR FEATURES) BY HENDRI"
+echo "================================================"
 echo ""
+echo "Pilih profile optimasi server:"
+echo "1) VPS Kecil     (1GB RAM - 1 CPU)"
+echo "2) VPS Medium    (2-4GB RAM - 2 CPU)"
+echo "3) VPS Besar     (8-10GB RAM - 4+ CPU)"
+echo ""
+
+read -p "Masukkan pilihan (1/2/3): " OPT
+
+# ===========================================
+# SETTING BERDASARKAN PROFIL
+# ===========================================
+if [[ "$OPT" == "1" ]]; then
+    WORKER_CONN=2048
+    MAX_CHILD=10
+    PM_START=2
+    PM_MIN=2
+    PM_MAX=4
+    GZIP_LEVEL=4
+elif [[ "$OPT" == "2" ]]; then
+    WORKER_CONN=4096
+    MAX_CHILD=25
+    PM_START=5
+    PM_MIN=5
+    PM_MAX=10
+    GZIP_LEVEL=5
+elif [[ "$OPT" == "3" ]]; then
+    WORKER_CONN=8192
+    MAX_CHILD=50
+    PM_START=10
+    PM_MIN=10
+    PM_MAX=20
+    GZIP_LEVEL=6
+else
+    echo "Pilihan salah!"
+    exit 1
+fi
 
 # ===========================================
 # INSTALL NGINX
@@ -12,22 +48,18 @@ echo ""
 apt update
 apt install -y nginx
 
-echo "[+] NGINX terinstall (AMAN, tanpa overwrite config)."
+echo "[+] Backup nginx.conf lama..."
+cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak.$(date +%s)
 
 # ===========================================
-# TUNING AMAN (TIDAK MENYENTUH nginx.conf)
+# TULIS CONFIG NGINX OPTIMIZED
 # ===========================================
-cat > /etc/nginx/conf.d/performance.conf << EOF
-##
-## NGINX PERFORMANCE TUNING (AMANKAN GENIEACS)
-##
-
-# Worker tuning
+cat > /etc/nginx/nginx.conf << EOF
+user www-data;
 worker_processes auto;
-worker_rlimit_nofile 200000;
 
 events {
-    worker_connections 4096;
+    worker_connections $WORKER_CONN;
     multi_accept on;
 }
 
@@ -36,113 +68,137 @@ http {
     tcp_nopush on;
     tcp_nodelay on;
 
-    server_tokens off;
+    client_max_body_size 100M;
 
     keepalive_timeout 30;
     keepalive_requests 200;
 
-    client_max_body_size 100M;
-
     gzip on;
+    gzip_comp_level $GZIP_LEVEL;
     gzip_min_length 10240;
-    gzip_comp_level 5;
-    gzip_vary on;
     gzip_proxied any;
+    gzip_vary on;
 
-    # Extra optimisation
-    types_hash_max_size 2048;
-    server_names_hash_bucket_size 128;
+    include /etc/nginx/mime.types;
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
 }
 EOF
 
-echo "[+] Performance tuning ditambahkan ke /etc/nginx/conf.d/performance.conf"
-
 # ===========================================
-# OPSIONAL SSL
+# SSL OPTIONAL
 # ===========================================
-read -p "Install SSL Let's Encrypt? (y/n): " SSL
+read -p "Apakah anda ingin menginstall SSL Let's Encrypt? (y/n): " SSL_USE
 
-if [[ "$SSL" =~ ^[Yy]$ ]]; then
-    read -p "Masukkan domain SSL: " DOMAIN
-    read -p "Masukkan email: " EMAIL
+if [[ "$SSL_USE" =~ ^[Yy]$ ]]; then
+    read -p "Masukkan domain SSL (contoh: panel.hendri.site): " DOMAIN
+    read -p "Masukkan email untuk SSL: " EMAIL
 
     apt install -y certbot python3-certbot-nginx
 
-    certbot --nginx -d $DOMAIN --email $EMAIL --agree-tos --non-interactive
+    certbot --nginx -d $DOMAIN --email $EMAIL --non-interactive --agree-tos
 
-    echo "[✓] SSL aktif untuk $DOMAIN"
+    echo "[+] SSL berhasil diaktifkan untuk $DOMAIN"
 else
-    echo "[-] SSL dilewati"
+    echo "[+] SSL dilewati..."
 fi
 
 # ===========================================
-# OPSIONAL: BBR2
+# FUNGSI BBR2 (AMAN UNTUK NAT VPS & LXC)
 # ===========================================
-read -p "Aktifkan BBR2 Accelerator (y/n): " BBR
-
-if [[ "$BBR" =~ ^[Yy]$ ]]; then
-
-    if [[ ! -d /proc/sys/net/ipv4 ]]; then
-        echo "[!] Sistem ini LXC/NAT VPS → tidak bisa enable BBR"
-    else
-        AVAILABLE=$(sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | awk '{print $3}')
-
-        if echo "$AVAILABLE" | grep -q "bbr2"; then
-            echo "[+] Mengaktifkan BBR2..."
-            sysctl -w net.core.default_qdisc=fq
-            sysctl -w net.ipv4.tcp_congestion_control=bbr2
-            echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-            echo "net.ipv4.tcp_congestion_control=bbr2" >> /etc/sysctl.conf
-            sysctl -p
-            echo "[✓] BBR2 aktif."
-        elif echo "$AVAILABLE" | grep -q "bbr"; then
-            echo "[+] Kernel tidak ada BBR2, menggunakan BBR..."
-            sysctl -w net.core.default_qdisc=fq
-            sysctl -w net.ipv4.tcp_congestion_control=bbr
-            echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-            echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-            sysctl -p
-            echo "[✓] BBR aktif."
-        else
-            echo "[!] Kernel tidak mendukung BBR/BBR2."
-        fi
+activate_bbr2() {
+    echo -n "[?] Mengaktifkan BBR2 Accelerator? (y/n): "
+    read ans
+    if [[ "$ans" != "y" ]]; then
+        echo "[!] BBR2 dibatalkan."
+        return
     fi
-else
-    echo "[-] BBR2 dilewati"
-fi
+
+    echo "[+] Mengecek dukungan kernel..."
+
+    # Jika sysctl tidak bisa ditulis = NAT VPS / LXC → jangan aktifkan
+    if [[ ! -d /proc/sys/net/ipv4 ]] || [[ ! -w /proc/sys/net/ipv4 ]]; then
+        echo "[!] Kernel tidak bisa diubah (NAT VPS / LXC)."
+        echo "[!] BBR/BBR2 tidak dapat diaktifkan di sistem ini."
+        return
+    fi
+
+    AVAILABLE=$(sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | awk '{print $3}')
+
+    if echo "$AVAILABLE" | grep -q "bbr2"; then
+        echo "[+] Mengaktifkan BBR2..."
+        sysctl -w net.core.default_qdisc=fq
+        sysctl -w net.ipv4.tcp_congestion_control=bbr2
+        echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+        echo "net.ipv4.tcp_congestion_control=bbr2" >> /etc/sysctl.conf
+        sysctl -p
+        echo "[✓] BBR2 aktif."
+        return
+    fi
+
+    if echo "$AVAILABLE" | grep -q "bbr"; then
+        echo "[+] Mengaktifkan BBR..."
+        sysctl -w net.core.default_qdisc=fq
+        sysctl -w net.ipv4.tcp_congestion_control=bbr
+        echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+        echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+        sysctl -p
+        echo "[✓] BBR aktif."
+        return
+    fi
+
+    echo "[!] Kernel tidak mendukung BBR/BBR2."
+}
+
+activate_bbr2
 
 # ===========================================
-# OPSIONAL FIREWALL (AMAN UNTUK GENIEACS)
+# FIREWALL OPTIONAL (AMAN UNTUK GENIEACS)
 # ===========================================
-read -p "Aktifkan firewall UFW Anti-DDoS? (y/n): " FW
+read -p "Aktifkan firewall anti-DDoS (ufw rate limit)? (y/n): " FW_USE
 
-if [[ "$FW" =~ ^[Yy]$ ]]; then
+if [[ "$FW_USE" =~ ^[Yy]$ ]]; then
+    echo "[+] Mengaktifkan UFW Anti-DDoS..."
+
     apt install -y ufw
-
-    echo "[+] Mengizinkan port NGINX"
+    ufw allow OpenSSH
     ufw allow 80/tcp
     ufw allow 443/tcp
 
-    echo "[+] Mengizinkan port GenieACS"
-    ufw allow 3000/tcp    # UI
-    ufw allow 7547/tcp    # CWMP
-    ufw allow 7557/tcp    # NBI
-    ufw allow 7567/tcp    # FS
+    # **Tambahkan port GenieACS supaya tidak KE-BLOK**
+    ufw allow 3000/tcp
+    ufw allow 7547/tcp
+    ufw allow 7557/tcp
+    ufw allow 7567/tcp
 
-    echo "[+] Mengaktifkan rate limit untuk NGINX"
     ufw limit 80/tcp
     ufw limit 443/tcp
 
     echo "y" | ufw enable
-    echo "[✓] Firewall aktif aman!"
+
+    echo "[+] Firewall aktif!"
 else
-    echo "[-] Firewall dilewati"
+    echo "[+] Firewall dilewati..."
 fi
+
+# ===========================================
+# PHP-FPM OPTIMISASI (Jika Ada)
+# ===========================================
+for PHPV in /etc/php/*/fpm/pool.d/www.conf; do
+    if [[ -f "$PHPV" ]]; then
+        sed -i "s/^pm.max_children =.*/pm.max_children = $MAX_CHILD/" "$PHPV"
+        sed -i "s/^pm.start_servers =.*/pm.start_servers = $PM_START/" "$PHPV"
+        sed -i "s/^pm.min_spare_servers =.*/pm.min_spare_servers = $PM_MIN/" "$PHPV"
+        sed -i "s/^pm.max_spare_servers =.*/pm.max_spare_servers = $PM_MAX/" "$PHPV"
+    fi
+done
 
 systemctl restart nginx
 
+systemctl restart php*-fpm 2>/dev/null || true
+
 echo ""
-echo "==============================================="
+echo "================================================"
 echo " INSTALASI SELESAI!"
-echo " NGINX aman untuk GenieACS & multi-instance."
-echo "==============================================="
+echo " Fitur tambahan dipasang sesuai pilihan Anda."
+echo "================================================"
