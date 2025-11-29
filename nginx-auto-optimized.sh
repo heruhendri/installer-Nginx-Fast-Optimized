@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "==============================================="
-echo "    AUTO NGINX OPTIMIZER BY HENDRI (RAM/CPU)   "
-echo "==============================================="
+echo "================================================"
+echo "  NGINX AUTO INSTALLER (MODULAR FEATURES) BY HENDRI"
+echo "================================================"
 echo ""
 echo "Pilih profile optimasi server:"
 echo "1) VPS Kecil     (1GB RAM - 1 CPU)"
@@ -13,9 +13,9 @@ echo ""
 
 read -p "Masukkan pilihan (1/2/3): " OPT
 
-# ============================
-# SETTING BERDASARKAN PROFILE
-# ============================
+# ===========================================
+# SETTING BERDASARKAN PROFIL
+# ===========================================
 if [[ "$OPT" == "1" ]]; then
     WORKER_CONN=2048
     MAX_CHILD=10
@@ -42,27 +42,18 @@ else
     exit 1
 fi
 
-echo ""
-echo "[+] Menggunakan profile RAM/CPU pilihan Anda..."
-sleep 1
-
-# ============================
-# INSTALL NGINX JIKA BELUM ADA
-# ============================
-if ! command -v nginx &> /dev/null; then
-    echo "[+] Menginstall Nginx..."
-    apt update
-    apt install -y nginx
-fi
+# ===========================================
+# INSTALL NGINX
+# ===========================================
+apt update
+apt install -y nginx
 
 echo "[+] Backup nginx.conf lama..."
 cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak.$(date +%s)
 
-# ============================
+# ===========================================
 # TULIS CONFIG NGINX OPTIMIZED
-# ============================
-echo "[+] Menulis konfigurasi Nginx baru..."
-
+# ===========================================
 cat > /etc/nginx/nginx.conf << EOF
 user www-data;
 worker_processes auto;
@@ -76,29 +67,12 @@ http {
     sendfile on;
     tcp_nopush on;
     tcp_nodelay on;
-
-    client_max_body_size 100M;
-
     keepalive_timeout 30;
-    keepalive_requests 10000;
 
     gzip on;
     gzip_comp_level $GZIP_LEVEL;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss;
 
-    proxy_read_timeout 60;
-    proxy_connect_timeout 60;
-    proxy_send_timeout 60;
-    fastcgi_read_timeout 60;
-
-    open_file_cache max=200000 inactive=20s;
-    open_file_cache_valid 30s;
-    open_file_cache_min_uses 2;
-    open_file_cache_errors on;
-
-    server_tokens off;
+    client_max_body_size 100M;
 
     include /etc/nginx/mime.types;
     include /etc/nginx/conf.d/*.conf;
@@ -106,39 +80,86 @@ http {
 }
 EOF
 
-# ============================
-# OPTIMASI PHP-FPM JIKA ADA
-# ============================
-echo "[+] Mengecek PHP-FPM..."
-PHP_FPM_FILE=$(ls /etc/php/*/fpm/pool.d/www.conf 2>/dev/null || true)
+# ===========================================
+# TANYA USER: MAU SSL ATAU TIDAK
+# ===========================================
+read -p "Apakah anda ingin menginstall SSL Let's Encrypt? (y/n): " SSL_USE
 
-if [[ -n "$PHP_FPM_FILE" ]]; then
-    echo "[+] Mengoptimalkan PHP-FPM untuk profile RAM/CPU..."
+if [[ "$SSL_USE" =~ ^[Yy]$ ]]; then
+    read -p "Masukkan domain SSL (contoh: panel.hendri.site): " DOMAIN
+    read -p "Masukkan email untuk SSL: " EMAIL
 
-    sed -i "s/^pm =.*/pm = dynamic/" "$PHP_FPM_FILE"
-    sed -i "s/^pm.max_children =.*/pm.max_children = $MAX_CHILD/" "$PHP_FPM_FILE"
-    sed -i "s/^pm.start_servers =.*/pm.start_servers = $PM_START/" "$PHP_FPM_FILE"
-    sed -i "s/^pm.min_spare_servers =.*/pm.min_spare_servers = $PM_MIN/" "$PHP_FPM_FILE"
-    sed -i "s/^pm.max_spare_servers =.*/pm.max_spare_servers = $PM_MAX/" "$PHP_FPM_FILE"
+    apt install -y certbot python3-certbot-nginx
 
-    systemctl restart php*-fpm || true
+    certbot --nginx -d $DOMAIN --email $EMAIL --non-interactive --agree-tos
+
+    echo "[+] SSL berhasil diaktifkan untuk $DOMAIN"
 else
-    echo "[+] PHP-FPM tidak ditemukan, skip..."
+    echo "[+] SSL dilewati..."
 fi
 
-# ============================
-# RESTART NGINX
-# ============================
-echo "[+] Test konfigurasi Nginx..."
-nginx -t
+# ===========================================
+# TANYA USER: MAU BBR ATAU TIDAK
+# ===========================================
+read -p "Aktifkan BBR2 Accelerator? (y/n): " BBR_USE
 
-echo "[+] Restart Nginx..."
+if [[ "$BBR_USE" =~ ^[Yy]$ ]]; then
+    echo "[+] Mengaktifkan BBR2..."
+
+    cat >> /etc/sysctl.conf << EOF
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+EOF
+
+    sysctl -p
+
+    echo "[+] BBR2 aktif!"
+else
+    echo "[+] BBR2 dilewati..."
+fi
+
+# ===========================================
+# TANYA USER: MAU FIREWALL ANTI-DDOS ATAU TIDAK
+# ===========================================
+read -p "Aktifkan firewall anti-DDoS (ufw rate limit)? (y/n): " FW_USE
+
+if [[ "$FW_USE" =~ ^[Yy]$ ]]; then
+    echo "[+] Mengaktifkan UFW Anti-DDoS..."
+
+    apt install -y ufw
+
+    ufw allow OpenSSH
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+
+    ufw limit 80/tcp
+    ufw limit 443/tcp
+
+    echo "y" | ufw enable
+
+    echo "[+] Firewall aktif!"
+else
+    echo "[+] Firewall dilewati..."
+fi
+
+# ===========================================
+# PHP-FPM OPTIMISASI OTOMATIS (JIKA ADA)
+# ===========================================
+PHP_FPM=$(ls /etc/php/*/fpm/pool.d/www.conf 2>/dev/null || true)
+
+if [[ -n "$PHP_FPM" ]]; then
+    sed -i "s/^pm.max_children =.*/pm.max_children = $MAX_CHILD/" "$PHP_FPM"
+    sed -i "s/^pm.start_servers =.*/pm.start_servers = $PM_START/" "$PHP_FPM"
+    sed -i "s/^pm.min_spare_servers =.*/pm.min_spare_servers = $PM_MIN/" "$PHP_FPM"
+    sed -i "s/^pm.max_spare_servers =.*/pm.max_spare_servers = $PM_MAX/" "$PHP_FPM"
+
+    systemctl restart php*-fpm
+fi
+
 systemctl restart nginx
 
 echo ""
-echo "==============================================="
-echo "    OPTIMASI SELESAI! NGINX SUDAH CEPAT!!!      "
-echo "==============================================="
-echo ""
-echo "Profile diterapkan sesuai pilihan: $OPT"
-echo ""
+echo "================================================"
+echo " INSTALASI SELESAI!"
+echo " Fitur tambahan hanya dipasang jika anda pilih"
+echo "================================================"
