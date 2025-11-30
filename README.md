@@ -31,7 +31,7 @@ https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main
 
 Maka cara memanggil installernya:
 
-### **1️⃣ Menggunakan curl**
+### ** Menggunakan curl**
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main/nginx-auto-optimized.sh)
@@ -80,7 +80,7 @@ GitHub Script file:
 https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main/safe-nginx.sh
 ```
 
-Maka cara memanggil installernya:
+## 2️⃣ *INSTALLER PILIH PROFILE SENDIRI* :
 
 ### **1️⃣ Menggunakan curl**
 
@@ -96,6 +96,18 @@ bash <(wget -qO- https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fa
 
 ---
 
+## 3️⃣ *INSTALER AUTO BERDASARKAN RAM DAN CPU VPS*
+### **1️⃣ Menggunakan curl**
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main/optimized-auto.sh)
+```
+
+### **2️⃣ Menggunakan wget**
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fast-Optimized/main/optimized-auto.sh)
+```
 ### jangan Lupa ⭐ Jika Repo Ini Bermanfaat
 
 Contact:
