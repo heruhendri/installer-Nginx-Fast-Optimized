@@ -140,7 +140,84 @@ bash <(wget -qO- https://raw.githubusercontent.com/heruhendri/installer-Nginx-Fa
 * Script 2: otomatis adaptif, sesuaikan hardware VPS → lebih cerdas.
 * Script 3: agresif & modular, manual pilih profil, cocok untuk VPS besar / high load / kebutuhan multi-service.
 
+## DiagramArsitektur Installer Nginx Auto Optimized
+
+          +----------------------+
+          |  Mulai Installer     |
+          +----------------------+
+                    |
+                    v
+       +-------------------------+
+       | Pilih Profil VPS        |
+       | 1) Kecil (1GB/1CPU)    |
+       | 2) Medium (2-4GB/2CPU) |
+       | 3) Besar (8-10GB/4CPU) |
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | Set Variabel Optimasi   |
+       | (Worker, PHP-FPM, Gzip)|
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | Install Paket           |
+       | nginx, certbot, ufw     |
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | Backup nginx.conf lama  |
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | Konfigurasi Nginx       |
+       | - Optimasi worker       |
+       | - Optimasi gzip         |
+       | - Proxy GenieACS        |
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | SSL Let's Encrypt?      |
+       | (Optional, Domain+Email)|
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | Aktifkan BBR/BBR2       |
+       | (Jika kernel support)   |
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | Firewall UFW?           |
+       | (Anti-DDOS, port penting)|
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | PHP-FPM Optimization    |
+       | - max_children          |
+       | - start_servers         |
+       | - min/max spare servers |
+       +-------------------------+
+                    |
+                    v
+       +-------------------------+
+       | Restart Nginx & PHP-FPM |
+       +-------------------------+
+                    |
+                    v
+          +----------------------+
+          |  Instalasi Selesai   |
+          |  Nginx + GenieACS siap |
+          +----------------------+
+
 ---
+
 Contact:
 * Mail heruu2004@gmail.com
 * Telegram https://t.me/GbtTapiPngnSndiri
