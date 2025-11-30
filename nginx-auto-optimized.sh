@@ -14,28 +14,28 @@ echo ""
 read -p "Masukkan pilihan (1/2/3): " OPT
 
 # ===========================================
-# SETTING BERDASARKAN PROFIL
+# PROFIL
 # ===========================================
 if [[ "$OPT" == "1" ]]; then
-    WORKER_CONN=2048
-    MAX_CHILD=10
+    WORKER_CONN=1024
+    MAX_CHILD=5
     PM_START=2
     PM_MIN=2
     PM_MAX=4
     GZIP_LEVEL=4
 elif [[ "$OPT" == "2" ]]; then
-    WORKER_CONN=4096
-    MAX_CHILD=25
-    PM_START=5
-    PM_MIN=5
-    PM_MAX=10
+    WORKER_CONN=2048
+    MAX_CHILD=10
+    PM_START=3
+    PM_MIN=3
+    PM_MAX=6
     GZIP_LEVEL=5
 elif [[ "$OPT" == "3" ]]; then
-    WORKER_CONN=8192
-    MAX_CHILD=50
-    PM_START=10
-    PM_MIN=10
-    PM_MAX=20
+    WORKER_CONN=4096
+    MAX_CHILD=20
+    PM_START=6
+    PM_MIN=6
+    PM_MAX=12
     GZIP_LEVEL=6
 else
     echo "Pilihan salah!"
@@ -52,7 +52,7 @@ echo "[+] Backup nginx.conf lama..."
 cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak.$(date +%s)
 
 # ===========================================
-# TULIS CONFIG NGINX OPTIMIZED
+# NGINX CONF OPTIMIZED
 # ===========================================
 cat > /etc/nginx/nginx.conf << EOF
 user www-data;
@@ -68,10 +68,9 @@ http {
     tcp_nopush on;
     tcp_nodelay on;
 
-    client_max_body_size 100M;
-
-    keepalive_timeout 30;
-    keepalive_requests 200;
+    client_max_body_size 200M;
+    keepalive_timeout 65;
+    keepalive_requests 500;
 
     gzip on;
     gzip_comp_level $GZIP_LEVEL;
@@ -86,99 +85,97 @@ http {
 EOF
 
 # ===========================================
-# SSL OPTIONAL
+# GENIEACS PROXY SAFE (MINIM 504)
 # ===========================================
-read -p "Apakah anda ingin menginstall SSL Let's Encrypt? (y/n): " SSL_USE
+cat > /etc/nginx/conf.d/genieacs.conf <<'EOF'
+# Reverse proxy untuk GenieACS UI dan CWMP
+server {
+    listen 80;
+    server_name _;
 
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+
+        proxy_connect_timeout 180s;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
+        send_timeout 180s;
+    }
+}
+
+# Optional: HTTPS redirect block nanti di certbot
+EOF
+
+# ===========================================
+# SSL LET'S ENCRYPT
+# ===========================================
+read -p "Install SSL Let's Encrypt? (y/n): " SSL_USE
 if [[ "$SSL_USE" =~ ^[Yy]$ ]]; then
-    read -p "Masukkan domain SSL (contoh: panel.hendri.site): " DOMAIN
-    read -p "Masukkan email untuk SSL: " EMAIL
+    read -p "Domain SSL: " DOMAIN
+    read -p "Email: " EMAIL
 
     apt install -y certbot python3-certbot-nginx
+    certbot --nginx -d $DOMAIN --email $EMAIL --agree-tos --non-interactive
 
-    certbot --nginx -d $DOMAIN --email $EMAIL --non-interactive --agree-tos
-
-    echo "[+] SSL berhasil diaktifkan untuk $DOMAIN"
-else
-    echo "[+] SSL dilewati..."
+    echo "[+] SSL aktif untuk $DOMAIN"
 fi
 
 # ===========================================
-# FUNGSI BBR2
+# BBR SAFE
 # ===========================================
 activate_bbr2() {
-    echo -n "[?] Mengaktifkan BBR2 Accelerator? (y/n): "
-    read ans
-    if [[ $ans != "y" ]]; then
-        echo "[!] BBR2 dibatalkan."
-        return
-    fi
-
-    echo "[+] Mengecek dukungan kernel..."
-
-    # Jika folder sysctl tidak ada → NAT VPS / LXC
+    read -p "[?] Aktifkan BBR/BBR2 jika kernel support? (y/n): " ans
+    if [[ "$ans" != "y" ]]; then return; fi
     if [[ ! -d /proc/sys/net/ipv4 ]]; then
-        echo "[!] Kernel tidak bisa diubah (LXC/NAT VPS)."
-        echo "[!] BBR/BBR2 tidak dapat diaktifkan."
+        echo "[!] NAT VPS/LXC: skip BBR"
         return
     fi
-
-    # Ambil daftar CC
     AVAILABLE=$(sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | awk '{print $3}')
-
-    # Jika BBR2 tersedia
     if echo "$AVAILABLE" | grep -q "bbr2"; then
-        echo "[+] Mengaktifkan BBR2..."
         sysctl -w net.core.default_qdisc=fq
         sysctl -w net.ipv4.tcp_congestion_control=bbr2
         echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
         echo "net.ipv4.tcp_congestion_control=bbr2" >> /etc/sysctl.conf
         sysctl -p
-        echo "[✓] BBR2 berhasil diaktifkan."
-        return
-    fi
-
-    # Jika hanya BBR tersedia
-    if echo "$AVAILABLE" | grep -q "bbr"; then
-        echo "[+] Kernel mendukung BBR. Mengaktifkan BBR..."
+        echo "[✓] BBR2 aktif"
+    elif echo "$AVAILABLE" | grep -q "bbr"; then
         sysctl -w net.core.default_qdisc=fq
         sysctl -w net.ipv4.tcp_congestion_control=bbr
         echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
         echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
         sysctl -p
-        echo "[✓] BBR berhasil diaktifkan."
-        return
+        echo "[✓] BBR aktif"
+    else
+        echo "[!] Kernel tidak support BBR/BBR2"
     fi
-
-    echo "[!] Kernel tidak mendukung BBR/BBR2."
 }
-
-# ====== PANGGIL FUNGSI BBR ======
 activate_bbr2
 
 # ===========================================
-# FIREWALL OPTIONAL
+# FIREWALL SAFE (UFW)
 # ===========================================
-read -p "Aktifkan firewall anti-DDoS (ufw rate limit)? (y/n): " FW_USE
-
+read -p "Aktifkan firewall anti-DDOS? (y/n): " FW_USE
 if [[ "$FW_USE" =~ ^[Yy]$ ]]; then
-    echo "[+] Mengaktifkan UFW Anti-DDoS..."
-
     apt install -y ufw
     ufw allow OpenSSH
     ufw allow 80/tcp
     ufw allow 443/tcp
+    ufw allow 3000/tcp
+    ufw allow 7547/tcp
+    ufw allow 7557/tcp
+    ufw allow 7567/tcp
     ufw limit 80/tcp
     ufw limit 443/tcp
     echo "y" | ufw enable
-
-    echo "[+] Firewall aktif!"
-else
-    echo "[+] Firewall dilewati..."
 fi
 
 # ===========================================
-# PHP-FPM OPTIMISASI (Jika Ada)
+# PHP-FPM OPTIMIZATION SAFE
 # ===========================================
 for PHPV in /etc/php/*/fpm/pool.d/www.conf; do
     if [[ -f "$PHPV" ]]; then
@@ -189,11 +186,11 @@ for PHPV in /etc/php/*/fpm/pool.d/www.conf; do
     fi
 done
 
-systemctl restart nginx
 systemctl restart php*-fpm 2>/dev/null || true
+systemctl restart nginx
 
 echo ""
 echo "================================================"
-echo " INSTALASI SELESAI!"
-echo " Fitur tambahan dipasang sesuai pilihan Anda."
+echo " INSTALASI SELESAI! NGINX + GenieACS siap"
+echo " Timeout proxy tinggi → minim 504 di HTTPS"
 echo "================================================"
